@@ -75,7 +75,9 @@ def grade(request: GradeRequest):
     env = sessions.get(request.session_id)
     if env is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    return {"session_id": request.session_id, "score": env.grade_episode()}
+    raw = env.grade_episode()
+    score = round(max(0.01, min(0.99, float(raw))), 4)
+    return {"session_id": request.session_id, "score": score}
 
 
 @app.get("/tasks")
