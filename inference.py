@@ -2,19 +2,56 @@ import os
 import json
 import sys
 from openai import OpenAI
-from client import HospitalEnvClient
 from models import HospitalAction, Assignment
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
+ENV_BASE_URL = os.environ.get("ENV_BASE_URL")
 ENV_NAME = "hospital-emergency-env"
 
 if not HF_TOKEN:
-    print("[WARN] HF_TOKEN not set — LLM calls will fail, fallback mode active", file=sys.stderr, flush=True)
+    print("[WARN] HF_TOKEN not set — LLM calls will use fallback mode", file=sys.stderr, flush=True)
 
-client = OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
+client = OpenAI(api_key=HF_TOKEN or "placeholder", base_url=API_BASE_URL)
+
+# Use embedded (in-process) env when ENV_BASE_URL is not set
+_USE_EMBEDDED = ENV_BASE_URL is None
+
+if _USE_EMBEDDED:
+    from server.hospital_environment import HospitalEnvironment
+
+    class _EmbeddedClient:
+        def __init__(self):
+            self._env = None
+
+        def reset(self, task_name="easy"):
+            self._env = HospitalEnvironment(task_name=task_name)
+            return self._env.reset()
+
+        def step(self, action):
+            return self._env.step(action)
+
+        def grade(self):
+            return self._env.grade_episode()
+
+        def close(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+else:
+    from client import HospitalEnvClient
+
+
+def _make_client():
+    if _USE_EMBEDDED:
+        return _EmbeddedClient()
+    return HospitalEnvClient(base_url=ENV_BASE_URL)
 
 
 def build_prompt(observation) -> str:
@@ -38,7 +75,6 @@ Last feedback: {observation.feedback}
 
 Patients waiting:
 {patients_text}
-
 For each patient choose: assign_icu, assign_ventilator, assign_doctor, defer, or discharge.
 Reply with ONLY a JSON array:
 [{{"patient_id": "P001", "action_type": "assign_icu", "reasoning": "critical chest pain"}}]"""
@@ -65,7 +101,7 @@ def call_llm(prompt: str):
         return [], str(e).replace("\n", " ")[:200]
 
 
-def run_episode(env_client: HospitalEnvClient, task_name: str) -> dict:
+def run_episode(env_client, task_name: str) -> dict:
     observation = env_client.reset(task_name=task_name)
 
     print(f"[START] task={task_name} env={ENV_NAME} model={MODEL_NAME}", flush=True)
@@ -116,8 +152,8 @@ def run_episode(env_client: HospitalEnvClient, task_name: str) -> dict:
         print(f"[STEP] step={step_num} action={action_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
     final_score = env_client.grade()
-    success_str = "true" if final_score > 0.0 else "false"
-    rewards_str = ",".join(f"{max(0.01, min(0.99, r)):.2f}" for r in step_rewards)
+    success_str = "true" if final_score > 0.01 else "false"
+    rewards_str = ",".join(f"{max(0.01, min(0.99, r)):.2f}" for r in step_rewards) if step_rewards else "0.01"
 
     print(f"[END] success={success_str} steps={step_num} rewards={rewards_str}", flush=True)
 
@@ -126,22 +162,20 @@ def run_episode(env_client: HospitalEnvClient, task_name: str) -> dict:
 
 def main():
     results = []
+    env_client = _make_client()
 
-    try:
-        env_client = HospitalEnvClient(base_url=ENV_BASE_URL)
-        for task_name in ["easy", "medium", "hard"]:
-            try:
-                result = run_episode(env_client, task_name)
-                results.append(result)
-            except Exception as e:
-                print(f"[END] success=false steps=0 rewards=", flush=True)
-                print(f"[ERROR] task={task_name} error={str(e)}", file=sys.stderr, flush=True)
-        env_client.close()
-    except Exception as e:
-        print(f"[END] success=false steps=0 rewards=", flush=True)
-        print(f"[ERROR] fatal error={str(e)}", file=sys.stderr, flush=True)
+    for task_name in ["easy", "medium", "hard"]:
+        try:
+            result = run_episode(env_client, task_name)
+            results.append(result)
+        except Exception as e:
+            fallback_rewards = "0.01"
+            print(f"[END] success=false steps=0 rewards={fallback_rewards}", flush=True)
+            print(f"[ERROR] task={task_name} error={str(e)}", file=sys.stderr, flush=True)
 
-    avg = round(sum(r["final_score"] for r in results) / len(results), 4) if results else 0.0
+    env_client.close()
+
+    avg = round(sum(r["final_score"] for r in results) / len(results), 4) if results else 0.01
     print(f"[SUMMARY] average_score={avg}", flush=True)
 
 

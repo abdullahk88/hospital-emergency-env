@@ -1,6 +1,6 @@
 import httpx
 from typing import Optional
-from models import HospitalAction, HospitalObservation, HospitalState, Assignment
+from models import HospitalAction, HospitalObservation
 
 
 class HospitalEnvClient:
@@ -8,7 +8,7 @@ class HospitalEnvClient:
     def __init__(self, base_url: str = "http://localhost:7860"):
         self.base_url = base_url.rstrip("/")
         self.session_id: Optional[str] = None
-        self._client = httpx.Client(timeout=30.0)
+        self._client = httpx.Client(timeout=60.0)
 
     def reset(self, task_name: str = "easy") -> HospitalObservation:
         r = self._client.post(

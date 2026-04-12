@@ -1,7 +1,8 @@
 """
 graders.py
 Deterministic scoring for all 3 tasks.
-Key fix: only counts FIRST action per patient (ignores repeated steps).
+Only counts FIRST action per patient (ignores repeated steps).
+All scores clamped to (0.01, 0.99) — strictly between 0 and 1.
 """
 
 from tasks import (
@@ -17,7 +18,6 @@ from tasks import (
 
 
 def _first_actions(episode_actions: list[dict]) -> dict:
-    """Extract only the first action taken per patient."""
     seen = {}
     for action in episode_actions:
         pid = action.get("patient_id")
@@ -59,6 +59,7 @@ def grade_easy(episode_actions: list[dict]) -> float:
 
     raw = total_score / max_score
     return round(max(0.01, min(0.99, raw)), 4)
+
 
 def grade_medium(episode_actions: list[dict]) -> float:
     if not episode_actions:
@@ -129,8 +130,6 @@ def grade_hard(episode_actions: list[dict]) -> float:
 
         action = first.get(pid)
         if action is None:
-            # Only penalize skipped critical patients
-            # if there was resource capacity (not penalize resource exhaustion)
             if severity == "critical":
                 total_score -= 0.3 * weight
             continue
@@ -155,5 +154,3 @@ def grade_hard(episode_actions: list[dict]) -> float:
 
     raw = total_score / max_score if max_score > 0 else 0.01
     return round(max(0.01, min(0.99, raw)), 4)
-
-print("DEBUG: Graders loaded successfully")
