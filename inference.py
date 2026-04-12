@@ -15,7 +15,6 @@ if not HF_TOKEN:
 
 client = OpenAI(api_key=HF_TOKEN or "placeholder", base_url=API_BASE_URL)
 
-# Use embedded (in-process) env when ENV_BASE_URL is not set
 _USE_EMBEDDED = ENV_BASE_URL is None
 
 if _USE_EMBEDDED:
@@ -151,11 +150,12 @@ def run_episode(env_client, task_name: str) -> dict:
 
         print(f"[STEP] step={step_num} action={action_str} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
-    final_score = env_client.grade()
+    final_score = max(0.01, min(0.99, env_client.grade()))
     success_str = "true" if final_score > 0.01 else "false"
+    score_str = f"{final_score:.4f}"
     rewards_str = ",".join(f"{max(0.01, min(0.99, r)):.2f}" for r in step_rewards) if step_rewards else "0.01"
 
-    print(f"[END] success={success_str} steps={step_num} rewards={rewards_str}", flush=True)
+    print(f"[END] success={success_str} steps={step_num} score={score_str} rewards={rewards_str}", flush=True)
 
     return {"task": task_name, "final_score": final_score}
 
@@ -169,8 +169,7 @@ def main():
             result = run_episode(env_client, task_name)
             results.append(result)
         except Exception as e:
-            fallback_rewards = "0.01"
-            print(f"[END] success=false steps=0 rewards={fallback_rewards}", flush=True)
+            print(f"[END] success=false steps=0 score=0.0100 rewards=0.01", flush=True)
             print(f"[ERROR] task={task_name} error={str(e)}", file=sys.stderr, flush=True)
 
     env_client.close()
