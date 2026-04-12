@@ -1,0 +1,19 @@
+spec_version: 1
+name: hospital-emergency-env
+version: 0.1.0
+description: Hospital Emergency Resource Allocation environment where an AI agent triages patients and allocates scarce ICU beds, doctors, and ventilators under time pressure.
+type: environment
+runtime: docker
+app: server.app:app
+port: 7860
+
+tasks:
+  - name: easy
+    description: 5 patients, unlimited resources. Correct triage assignment required.
+    difficulty: easy
+  - name: medium
+    description: 10 patients, limited resources (ICU=3, doctors=5, ventilators=2). Optimal allocation under constraints.
+    difficulty: medium
+  - name: hard
+    description: 15 patients, constrained resources, new arrivals at step 3, patient deterioration, death mechanic for untreated critical patients.
+    difficulty: hard
